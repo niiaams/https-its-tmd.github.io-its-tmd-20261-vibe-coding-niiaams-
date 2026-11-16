@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Eksplorasi WebGL · three.js</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #fff5ed; font-family: Arial, Helvetica, sans-serif; }
+    #info { position: absolute; top: 12px; left: 12px; right: 12px; max-width: 520px; background: #ffffff; border-radius: 10px; padding: 12px 14px; color: #1a1a1a; font-size: 14px; line-height: 1.5; }
+    #info strong { color: #9b4a08; }
+    canvas { display: block; }
+  </style>
+  <script type="importmap">
+    { "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    } }
+  </script>
+</head>
+<body>
+  <div id="info">
+    <strong>Eksplorasi WebGL.</strong> Seret untuk memutar, gulir untuk zoom, klik benda untuk mencatat kejadian.
+    Minta agen mengganti benda ini dengan model 3D dari ide Anda (format <code>.glb</code>).
+    <div id="status">Belum ada klik.</div>
+  </div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#fff5ed');
+    const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
+    camera.position.set(3, 2, 4);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    scene.add(new THREE.HemisphereLight('#ffffff', '#f8d3af', 1.2));
+    const sun = new THREE.DirectionalLight('#ffffff', 1.5);
+    sun.position.set(4, 6, 3);
+    scene.add(sun);
+
+    const lantai = new THREE.Mesh(new THREE.CircleGeometry(4, 48), new THREE.MeshStandardMaterial({ color: '#f8d3af' }));
+    lantai.rotation.x = -Math.PI / 2;
+    scene.add(lantai);
+
+    const benda = new THREE.Mesh(
+      new THREE.TorusKnotGeometry(0.6, 0.22, 160, 24),
+      new THREE.MeshStandardMaterial({ color: '#fe9f4d', roughness: 0.35 })
+    );
+    benda.position.y = 1.1;
+    scene.add(benda);
+
+    // Klik benda: contoh pencatatan kejadian di dunia 3D.
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let jumlahKlik = 0;
+    renderer.domElement.addEventListener('click', (e) => {
+      pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+      raycaster.setFromCamera(pointer, camera);
+      if (raycaster.intersectObject(benda).length) {
+        jumlahKlik += 1;
+        document.getElementById('status').textContent = `Benda diklik ${jumlahKlik} kali (${new Date().toLocaleTimeString('id-ID')}).`;
+      }
+    });
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    renderer.setAnimationLoop(() => {
+      benda.rotation.y += 0.005;
+      controls.update();
+      renderer.render(scene, camera);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# Data uji coba dan rahasia jangan ikut diunggah
+*.csv
+data/
+.env
+.env.*
+*.key
+
+# Berkas sistem dan alat
+.DS_Store
+Thumbs.db
+node_modules/
+.vscode/
