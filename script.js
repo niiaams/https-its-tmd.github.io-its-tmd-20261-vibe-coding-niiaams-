@@ -1,13 +1,15 @@
-// Starter prototipe Hokage XR Academy.
-// Pola utamanya: kondisi pembanding, interaksi inti, lalu catat(kejadian, detail).
-// Saat mengubah prototipe, pertahankan fungsi catat() dan unduhCSV().
+// Pencatatan data riset (WAJIB dipertahankan): catat(kejadian, detail) dan unduhCSV().
+// Kondisi pembanding:
+//   A = konfigurator tanpa estimasi real-time (harga & lead time baru muncul setelah "Hitung estimasi")
+//   B = estimasi harga, lead time, dan penghitung keberlanjutan tampil langsung di setiap perubahan
+// Data hanya disimpan di browser ini (localStorage), tidak dikirim ke mana pun.
 
 const KUNCI_SIMPAN = 'vibe-coding-log';
-const stage = document.getElementById('stage');
+const KUNCI_KONDISI = 'robries-kondisi';
 const isiLog = document.getElementById('isi-log');
 const inputPeserta = document.getElementById('kode-peserta');
 
-let kondisi = 'A';
+let kondisi = (() => { try { return localStorage.getItem(KUNCI_KONDISI) || 'B'; } catch (e) { return 'B'; } })();
 let waktuMulai = null;
 let log = muatLog();
 
@@ -68,20 +70,29 @@ function unduhCSV() {
   URL.revokeObjectURL(a.href);
 }
 
-// === Kontrol sesi ===
+// === Kontrol sesi (panel riset) ===
+
+function tandaiKondisi() {
+  document.querySelectorAll('.seg').forEach((t) => t.classList.toggle('aktif', t.dataset.kondisi === kondisi));
+  document.body.dataset.kondisi = kondisi;
+}
+tandaiKondisi();
 
 document.querySelectorAll('.seg').forEach((tombol) => {
   tombol.addEventListener('click', () => {
-    document.querySelectorAll('.seg').forEach((t) => t.classList.remove('aktif'));
-    tombol.classList.add('aktif');
     kondisi = tombol.dataset.kondisi;
+    try { localStorage.setItem(KUNCI_KONDISI, kondisi); } catch (e) { /* abaikan */ }
+    tandaiKondisi();
+    catat('ganti_kondisi', kondisi);
+    if (window.App) window.App.render();
   });
 });
 
 document.getElementById('tombol-mulai').addEventListener('click', () => {
   waktuMulai = performance.now();
-  catat('mulai_tugas');
-  tampilkanPrototipe();
+  catat('mulai_tugas', 'Rancang kafe 8×6 m, lalu checkout atau kirim ke Sales');
+  document.getElementById('panel-riset').classList.remove('buka');
+  if (window.App) window.App.mulaiTugas();
 });
 
 document.getElementById('tombol-unduh').addEventListener('click', unduhCSV);
@@ -93,53 +104,32 @@ document.getElementById('tombol-hapus').addEventListener('click', () => {
   isiLog.innerHTML = '';
 });
 
-// === Area prototipe (ganti bagian ini dengan prototipe Anda) ===
+document.getElementById('buka-riset').addEventListener('click', () => {
+  document.getElementById('panel-riset').classList.toggle('buka');
+});
+document.getElementById('tutup-riset').addEventListener('click', () => {
+  document.getElementById('panel-riset').classList.remove('buka');
+});
 
-function tampilkanPrototipe() {
-  const cerita = kondisi === 'B'
-    ? `<div class="cerita">
-         <strong>Cerita bahan</strong>
-         <p>Kunyit kami dipanen petani di lereng Gunung Wilis, lalu dijemur dan digiling dalam 48 jam.</p>
-       </div>`
-    : '';
-
-  stage.innerHTML = `
-    <article class="produk">
-      <h3>Jamu Kita: Kunyit Asam</h3>
-      <p class="harga">Rp18.000 per botol</p>
-      ${cerita}
-      <button type="button" class="sekunder" id="lihat-bahan">Lihat bahan</button>
-      <div id="wadah-bahan"></div>
-      <button type="button" class="primer" id="sudah-temukan">Saya sudah menemukan asal bahan</button>
-    </article>`;
-
-  document.getElementById('lihat-bahan').addEventListener('click', () => {
-    catat('buka_bahan');
-    document.getElementById('wadah-bahan').innerHTML =
-      '<div class="detail-bahan">Bahan utama: kunyit dari Gunung Wilis, asam jawa, gula aren.</div>';
-  });
-
-  document.getElementById('sudah-temukan').addEventListener('click', () => {
-    catat('temukan_asal_bahan');
-    tanyaSkor();
-  });
-}
-
-function tanyaSkor() {
-  stage.innerHTML = `
-    <p><strong>Seberapa percaya Anda pada produk ini?</strong> (1 = tidak percaya, 5 = sangat percaya)</p>
-    <div class="skala">
-      ${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-skor="${n}">${n}</button>`).join('')}
+// Skor keyakinan setelah konversi (dipanggil dari app.js)
+function tanyaSkor(konteks) {
+  const wadah = document.getElementById('skor-wadah');
+  wadah.innerHTML = `
+    <div class="skor-kartu" role="dialog" aria-label="Skor keyakinan">
+      <p><strong>Seberapa yakin Anda melanjutkan proyek ini dengan informasi yang tersedia?</strong><br>
+      <small>How confident are you to proceed with this project? (1 = not at all, 5 = very)</small></p>
+      <div class="skala">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-skor="${n}">${n}</button>`).join('')}</div>
     </div>`;
-  stage.querySelectorAll('[data-skor]').forEach((tombol) => {
-    tombol.addEventListener('click', () => {
-      catat('skor_kepercayaan', tombol.dataset.skor);
-      catat('selesai_tugas');
-      stage.innerHTML = '<p class="selesai">Terima kasih. Tugas selesai dan data sudah tercatat.</p>';
-      waktuMulai = null;
-    });
-  });
+  wadah.hidden = false;
+  wadah.querySelectorAll('[data-skor]').forEach((b) => b.addEventListener('click', () => {
+    catat('skor_keyakinan', `${b.dataset.skor} (${konteks})`);
+    catat('selesai_tugas', konteks);
+    waktuMulai = null;
+    wadah.hidden = true;
+    wadah.innerHTML = '';
+  }));
 }
+window.tanyaSkor = tanyaSkor;
 
 // Tampilkan log yang tersimpan sebelumnya.
 log.forEach(tambahBarisTabel);

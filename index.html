@@ -1,63 +1,128 @@
 <!doctype html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Starter Prototipe · Hokage XR Academy</title>
+  <title>ROBRIES · Recycle Sheet, Recycle Furniture & Outdoor Furniture from Recycled Material</title>
+  <meta name="description" content="ROBRIES designs and manufactures recycle sheet, recycle furniture and outdoor furniture from 100% recycled material (HDPE & LDPE plastic waste). Plan your space in 3D, get an instant estimate, and order online. Sustainable product for F&B, hotels, offices and schools.">
+  <meta name="keywords" content="recycle sheet, recycle furniture, outdoor furniture, recycledmaterial, sustainableproduct, recycled plastic sheet, furnitur daur ulang, lembaran plastik daur ulang, furnitur outdoor, produk berkelanjutan, リサイクル家具">
+  <meta property="og:title" content="ROBRIES · Recycled material for architecture & furniture">
+  <meta property="og:description" content="Recycle sheet and recycle furniture made from household plastic waste. Configure in 3D, estimate instantly.">
+  <meta property="og:image" content="./gambar/proyek/wall-panel-retail.jpg">
+  <link rel="alternate" hreflang="en" href="./#/home?lang=en">
+  <link rel="alternate" hreflang="id" href="./#/home?lang=id">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"Organization","name":"ROBRIES","slogan":"Experience responsible living","description":"Manufacturer of recycle sheet, recycle furniture and outdoor furniture from 100% recycled plastic.","areaServed":["ID","MY","SG","AU","JP","GB","US"]}
+  </script>
 </head>
-<body>
-  <header class="topbar">
-    <p class="eyebrow">Hokage XR Academy · Starter Prototipe</p>
-    <h1>Ganti halaman ini dengan prototipe Anda</h1>
-    <p class="claim"><strong>Klaim contoh:</strong> cerita asal bahan membuat konsumen lebih percaya pada produk jamu kemasan. <span class="tag">contoh rekaan</span></p>
+<body data-kondisi="B">
+  <header class="situs-header">
+    <div class="header-dalam">
+      <a href="#/home" class="logo" aria-label="ROBRIES home">R<span class="logo-o">O</span>BRIES</a>
+      <button type="button" class="menu-toggle" id="menu-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+      <nav class="nav-utama" id="nav-utama" aria-label="Main"></nav>
+      <div class="header-kontrol">
+        <label class="sr" for="pilih-bahasa">Language</label>
+        <select id="pilih-bahasa" title="Language">
+          <option value="en">EN</option>
+          <option value="id">ID</option>
+          <option value="ja">JA (beta)</option>
+        </select>
+        <label class="sr" for="pilih-mata-uang">Currency</label>
+        <select id="pilih-mata-uang" title="Currency"></select>
+        <label class="sr" for="pilih-peran">Role</label>
+        <select id="pilih-peran" title="Role (simulated login)">
+          <option value="guest">Guest</option>
+          <option value="customer">Customer</option>
+          <option value="distributor">Distributor</option>
+          <option value="sales">Sales (HQ)</option>
+          <option value="admin">Admin (HQ)</option>
+        </select>
+      </div>
+    </div>
   </header>
 
-  <main class="layout">
-    <section class="panel" aria-labelledby="judul-kontrol">
-      <h2 id="judul-kontrol">1. Atur sesi uji</h2>
-      <label for="kode-peserta">Kode peserta</label>
-      <input id="kode-peserta" type="text" value="P01" maxlength="12" autocomplete="off">
+  <main id="app" tabindex="-1"></main>
 
-      <p class="label">Kondisi pembanding</p>
-      <div class="segmented" role="group" aria-label="Pilih kondisi">
-        <button type="button" class="seg aktif" data-kondisi="A">A: halaman ringkas</button>
-        <button type="button" class="seg" data-kondisi="B">B: dengan cerita bahan</button>
+  <footer class="situs-footer">
+    <div class="footer-dalam">
+      <div>
+        <p class="logo kecil">R<span class="logo-o">O</span>BRIES</p>
+        <p class="redup">100% Recycled Plastic Material · Experience responsible living</p>
       </div>
-
-      <button type="button" id="tombol-mulai" class="primer">Mulai tugas</button>
-      <p class="hint">Tugas peserta: temukan asal bahan utama produk, lalu beri skor kepercayaan.</p>
-    </section>
-
-    <section class="panel stage" aria-labelledby="judul-stage">
-      <h2 id="judul-stage">2. Area prototipe</h2>
-      <div id="stage">
-        <p class="kosong">Tekan <strong>Mulai tugas</strong> untuk menampilkan prototipe sesuai kondisi.</p>
-      </div>
-    </section>
-
-    <section class="panel log" aria-labelledby="judul-log">
-      <h2 id="judul-log">3. Data yang tercatat</h2>
-      <p class="hint">Setiap kejadian dicatat oleh layar, bukan oleh peneliti. Data hanya tersimpan di browser ini.</p>
-      <div class="aksi">
-        <button type="button" id="tombol-unduh" class="primer">Unduh CSV</button>
-        <button type="button" id="tombol-hapus" class="sekunder">Hapus log</button>
-      </div>
-      <div class="tabel-wrap">
-        <table>
-          <thead>
-            <tr><th>Waktu</th><th>Peserta</th><th>Kondisi</th><th>Kejadian</th><th>Detail</th><th>ms</th></tr>
-          </thead>
-          <tbody id="isi-log"></tbody>
-        </table>
-      </div>
-    </section>
-  </main>
-
-  <footer class="kaki">
-    Starter ini sengaja sederhana. Minta agen Antigravity mengubah area prototipe, kondisi, dan data sesuai <code>GULUNGAN-MISI.md</code> Anda.
+      <p class="redup kecil-teks">Research prototype. Prices from the Nov 2024 price list. Other data (specs, shipping, distributors, projects marked fictional) is placeholder. Payments, login, email and AI are simulated. No data leaves this browser.</p>
+    </div>
   </footer>
 
+  <!-- Chat asisten (Simulasi AI) -->
+  <button type="button" class="chat-fab" id="chat-fab" aria-label="Open assistant">💬</button>
+  <section class="chat" id="chat" hidden aria-label="Assistant">
+    <header class="chat-head">
+      <strong id="chat-judul">ROBRIES Assistant</strong>
+      <span class="label-sim" id="chat-label">AI simulation</span>
+      <button type="button" class="ikon" id="chat-tutup" aria-label="Close">✕</button>
+    </header>
+    <div class="chat-isi" id="chat-isi"></div>
+    <form class="chat-form" id="chat-form">
+      <input id="chat-input" autocomplete="off">
+      <button type="submit" class="primer">→</button>
+    </form>
+    <button type="button" class="tautan" id="chat-handoff">Talk to a human</button>
+  </section>
+
+  <div class="modal-latar" id="modal" hidden></div>
+  <div id="cetak" aria-hidden="true"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="skor-latar" id="skor-wadah" hidden></div>
+
+  <!-- Panel riset: kondisi pembanding + log + Unduh CSV (wajib dipertahankan) -->
+  <button type="button" class="riset-fab" id="buka-riset">Panel riset</button>
+  <aside class="panel-riset" id="panel-riset" aria-labelledby="judul-riset">
+    <div class="riset-head">
+      <h2 id="judul-riset">Panel riset</h2>
+      <button type="button" class="ikon" id="tutup-riset" aria-label="Tutup">✕</button>
+    </div>
+    <label for="kode-peserta">Kode peserta</label>
+    <input id="kode-peserta" type="text" value="P01" maxlength="12" autocomplete="off">
+    <p class="label">Kondisi pembanding</p>
+    <div class="segmented" role="group" aria-label="Pilih kondisi">
+      <button type="button" class="seg" data-kondisi="A">A: estimasi atas permintaan</button>
+      <button type="button" class="seg" data-kondisi="B">B: estimasi real-time</button>
+    </div>
+    <button type="button" id="tombol-mulai" class="primer">Mulai tugas</button>
+    <p class="hint">Tugas peserta: rancang layout kafe (boleh mulai dari template), atur material/warna, lalu pilih <em>Checkout</em> atau <em>Kirim ke Sales</em> dan beri skor keyakinan.</p>
+    <p class="hint">Setiap kejadian dicatat oleh layar. Data hanya tersimpan di browser ini.</p>
+    <div class="aksi">
+      <button type="button" id="tombol-unduh" class="primer">Unduh CSV</button>
+      <button type="button" id="tombol-hapus" class="sekunder">Hapus log</button>
+    </div>
+    <div class="tabel-wrap">
+      <table>
+        <thead>
+          <tr><th>Waktu</th><th>Peserta</th><th>Kondisi</th><th>Kejadian</th><th>Detail</th><th>ms</th></tr>
+        </thead>
+        <tbody id="isi-log"></tbody>
+      </table>
+    </div>
+  </aside>
+
+  <script src="js/data.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/engine.js"></script>
   <script src="script.js"></script>
+  <script src="js/app.js"></script>
+  <script type="module" src="js/configurator.js"></script>
 </body>
 </html>

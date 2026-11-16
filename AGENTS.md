@@ -46,3 +46,10 @@ File ini dibaca otomatis oleh agen Antigravity (dan agen lain yang mendukung `AG
 - Warna utama: #..., font: ...
 - Hal yang tidak boleh diubah: ...
 -->
+
+- Proyek: prototipe platform B2B **ROBRIES** (recycle sheet & recycle furniture dari 100% plastik daur ulang). Alur: Explore → Configure 3D → Place & Specify → Estimate → Convert (checkout/DP atau kirim ke Sales).
+- Struktur: `index.html`, `style.css`, `script.js` (catat/unduhCSV + panel riset), `js/data.js` (katalog & aturan default), `js/i18n.js` (EN/ID, siap JA), `js/engine.js` (harga & lead time), `js/app.js` (halaman), `js/configurator.js` (three.js 0.160.0 via importmap unpkg).
+- Kondisi pembanding: A = estimasi atas permintaan, B = estimasi real-time. Dipilih di "Panel riset" (pojok kiri bawah).
+- Brand: ocean blue (#0f5e8c) + terracotta (#c4623a), font Roboto. Warna material mengikuti RPS Material Colorways (`gambar/warna/`).
+- Harga produk dari Pricelist Nov 2024; data lain (spesifikasi, ongkir, distributor, proyek bertanda fiktif) adalah rekaan.
+
