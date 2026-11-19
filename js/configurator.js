@@ -138,6 +138,32 @@ function satOverlap(A, B) {
   }
   return true;
 }
+// Batasi item agar tetap di dalam dinding ruang. Mengembalikan true bila posisi berubah.
+function clampItem(it) {
+  const [RL, RW] = hooks.getProject().room;
+  const bb = aabb(footprint(it));
+  let dx = 0, dz = 0;
+  if (bb.maxX - bb.minX >= RL) dx = RL / 2 - (bb.minX + bb.maxX) / 2;
+  else if (bb.minX < 0) dx = -bb.minX; else if (bb.maxX > RL) dx = RL - bb.maxX;
+  if (bb.maxZ - bb.minZ >= RW) dz = RW / 2 - (bb.minZ + bb.maxZ) / 2;
+  else if (bb.minZ < 0) dz = -bb.minZ; else if (bb.maxZ > RW) dz = RW - bb.maxZ;
+  if (Math.abs(dx) < 0.5 && Math.abs(dz) < 0.5) return false;
+  it.x = Math.round(it.x + dx); it.z = Math.round(it.z + dz);
+  return true;
+}
+// Batasi pergeseran sekelompok item (dx, dz) agar gabungannya tidak menembus dinding.
+function clampDelta(orig, dx, dz) {
+  const [RL, RW] = hooks.getProject().room;
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  orig.forEach((o) => {
+    const bb = aabb(footprint({ ...o.it, x: o.x, z: o.z }));
+    minX = Math.min(minX, bb.minX); maxX = Math.max(maxX, bb.maxX); minZ = Math.min(minZ, bb.minZ); maxZ = Math.max(maxZ, bb.maxZ);
+  });
+  dx = Math.min(Math.max(dx, -minX), RL - maxX);
+  dz = Math.min(Math.max(dz, -minZ), RW - maxZ);
+  return [dx, dz];
+}
+
 function ignoresCollision(it) {
   const p = PMAP[it.pid];
   return p.cat === 'decor';
@@ -238,6 +264,9 @@ function rebuild() {
   meshes.forEach((m) => itemsGroup.remove(m));
   meshes.clear();
   const prj = hooks.getProject();
+  let clamped = false;
+  if (!(hooks.readOnly && hooks.readOnly())) prj.items.forEach((it) => { if (clampItem(it)) clamped = true; });
+  if (clamped && hooks.persist) hooks.persist();
   prj.items.forEach((it) => {
     const g = buildShape(it);
     g.userData.uid = it.uid;
@@ -357,6 +386,7 @@ function onPointerMove(e) {
     dx = Math.round((po.x + dx) / step) * step - po.x;
     dz = Math.round((po.z + dz) / step) * step - po.z;
   }
+  [dx, dz] = clampDelta(drag.orig, dx, dz);
   drag.orig.forEach((o) => {
     o.it.x = o.x + dx; o.it.z = o.z + dz;
     placeMesh(meshes.get(o.it.uid), o.it);
@@ -369,7 +399,7 @@ function onPointerUp(e) {
   controls.enabled = true;
   if (drag) {
     if (drag.moved) {
-      if (drag.orig.length === 1) snapToWalls(drag.orig[0].it);
+      if (drag.orig.length === 1) { snapToWalls(drag.orig[0].it); clampItem(drag.orig[0].it); }
       drag.orig.forEach((o) => { o.it.x = Math.round(o.it.x); o.it.z = Math.round(o.it.z); placeMesh(meshes.get(o.it.uid), o.it); });
       const info = analyse();
       updateHighlights();
@@ -455,6 +485,7 @@ window.R3D = {
   getSelection: () => [...selected],
   analyse: () => analyse(),
   snapToWalls,
+  clampItem: (it) => clampItem(it),
   screenshot: () => { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/png'); },
   resetCamera: () => { setCameraDefault(); requestRender(); },
   // posisi layar item (untuk uji otomatis)

@@ -6,6 +6,29 @@ Salin blok di bawah untuk setiap entri baru. Entri terbaru di atas.
 
 ---
 
+### Entri 2
+
+- **Tanggal:** 2026-11-19
+- **Alat:** Claude Code (plan dulu, lalu eksekusi)
+- **Prompt:**
+
+```
+Hal yang disalahpahami: fitur konfigurasi adalah fitur tambahan, bukan jalur utama pembelian.
+Update: tombol "add to cart" di produk; produk di konfigurator 3D tidak bisa keluar dinding; penawaran harus dibayar (min. DP) sebelum jadi pesanan;
+negara & mata uang dipilih lewat popup di awal dan dikunci saat checkout; tanggal estimasi muncul di tracking order;
+status pesanan: deposit received, produksi, packing, shipping, delivered; hapus opsi akun trade & grosir.
+Kondisi A: tetap seperti sekarang tanpa memunculkan harga produk sama sekali. Kondisi B: bisa langsung checkout tanpa dan melalui konfigurasi.
+```
+
+- **Ringkasan rencana agen:** keranjang sebagai jalur utama, batas dinding di 3D, pembayaran penawaran, popup negara/mata uang + kunci mata uang, jadwal perkiraan per tahap, 5 tahap status, hapus opsi trade/grosir; kondisi A/B disesuaikan.
+- **Keputusan saya:** setuju, dengan definisi ulang kondisi A/B.
+- **Alasan dan koreksi yang saya berikan:** konfigurator bukan jalur wajib; harga adalah variabel yang dibandingkan.
+- **Hasil:** keranjang & checkout tanpa konfigurasi, kondisi A tanpa harga, penawaran wajib bayar, mata uang terkunci, tracking dengan tanggal.
+- **Hal yang disalahpahami agen:** menjadikan konfigurator 3D sebagai jalur utama pembelian.
+- **Catatan commit:** Tambah keranjang & checkout tanpa konfigurasi, kondisi A tanpa harga, batas dinding 3D, pembayaran penawaran, popup negara/mata uang terkunci, dan jadwal di tracking pesanan.
+
+---
+
 ### Entri 1
 
 - **Tanggal:** 2026-11-16
