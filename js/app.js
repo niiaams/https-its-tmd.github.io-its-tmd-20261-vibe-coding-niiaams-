@@ -19,6 +19,8 @@ let S = loadState() || {
   ui: { grid: true, multi: false, rotStep: 15, filters: {} },
 };
 S.ui = S.ui || { grid: true, multi: false, rotStep: 15, filters: {} };
+S.cart = S.cart || { lines: [], ctx: null, notes: '' };
+S.locale = S.locale || null;
 let R = mergeRules(DEFAULT_RULES, S.rules);
 LANG = S.lang;
 
@@ -46,7 +48,7 @@ function newProject(name, tplId) {
   const p = {
     id: uid('P'), name: name || 'Untitled project', folder: 'General', created: Date.now(), updated: Date.now(),
     room: tpl ? tpl.room.slice() : [8000, 6000, 3000], template: tplId || 'custom', items: [],
-    ctx: { country: 'ID', zone: 'jawa', incoterm: 'CIF', priceList: S.role === 'distributor' ? 'distributor' : 'retail', segment: 'fnb' },
+    ctx: defaultCtx(),
     versions: [], notes: '', files: [], override: { pct: 0 }, status: 'draft', email: '', estStamp: null,
   };
   if (tpl) p.items = tpl.items.map((t) => makeItem(t.pid, t.x, t.z, { rot: t.rot, color: tpl.color, dims: t.dims, size: t.dims ? 'custom' : 'standard' }));
@@ -54,6 +56,9 @@ function newProject(name, tplId) {
   S.current = p.id;
   save();
   return p;
+}
+function defaultCtx() {
+  return { country: (S.locale && S.locale.country) || 'ID', zone: 'jawa', incoterm: 'CIF', priceList: S.role === 'distributor' ? 'distributor' : 'retail', segment: 'fnb' };
 }
 function makeItem(pid, x, z, extra = {}) {
   const p = PMAP[pid];
@@ -87,6 +92,15 @@ function baseURL() { return location.href.split('#')[0]; }
 
 // ---------- Helpers tampilan ----------
 const money = (idr) => fmt(idr, S.cur, R);
+// Kondisi A: harga produk tidak ditampilkan ke pelanggan (staf tetap melihat harga).
+function hargaTampil() { return kondisi === 'B' || ['sales', 'admin', 'distributor'].includes(S.role); }
+function priceTag(idr) { return hargaTampil() ? money(idr) : `<span class="harga-minta">${t('price_on_request')}</span>`; }
+// Nilai pesanan memakai mata uang & kurs yang dikunci saat checkout.
+function om(idr, o) {
+  if (!o || !o.cur) return money(idr);
+  try { return new Intl.NumberFormat(LANG === 'id' ? 'id-ID' : 'en-US', { style: 'currency', currency: o.cur, maximumFractionDigits: 0 }).format(idr / o.fx); } catch (e) { return o.cur + ' ' + Math.round(idr / o.fx); }
+}
+function lockOrderCur(o) { o.cur = S.cur; o.fx = R.fx[S.cur] || 1; return o; }
 function segLabel(id) { return L(SEGMENTS.find((s) => s.id === id)); }
 function catLabel(id) { return L(CATEGORIES.find((s) => s.id === id)); }
 function countryLabel(id) { return L(COUNTRIES.find((s) => s.id === id)); }
@@ -102,8 +116,8 @@ function canSeeList(id) {
   if (id === 'retail') return true;
   if (S.role === 'admin' || S.role === 'sales') return true;
   if (id === 'distributor') return S.role === 'distributor';
-  if (id === 'trade') return S.account.tradeApproved;
-  if (id === 'wholesale') return S.account.wholesaleApproved || S.role === 'distributor';
+  if (id === 'trade') return false;
+  if (id === 'wholesale') return S.role === 'distributor';
   return false;
 }
 function routeLead(country, segment) {
@@ -148,6 +162,14 @@ function render() {
   $('#chat-input').placeholder = t('ai_placeholder');
   $('#chat-handoff').textContent = t('ai_handoff');
   $('#buka-riset').textContent = t('research');
+  const n = S.cart.lines.reduce((a, l) => a + l.qty, 0);
+  $('#jumlah-keranjang').textContent = n;
+  $('#tombol-keranjang').title = kondisi === 'A' ? t('quote_cart') : t('cart');
+  const locked = ['checkout', 'pay'].includes(route.name);
+  $('#pilih-mata-uang').disabled = locked;
+  $('#pilih-mata-uang').title = locked ? t('cur_locked') : 'Currency';
+  $('#tombol-lokasi').disabled = locked;
+  $('#label-lokasi').textContent = `${(S.locale && S.locale.country) || 'ID'} · ${S.cur}`;
   const v = VIEWS[route.name] || VIEWS.home;
   const app = $('#app');
   app.className = 'view-' + route.name;
@@ -171,8 +193,8 @@ VIEWS.home = (app) => {
       <h1>${t('hero_title')}</h1>
       <p class="lead">${t('hero_sub')}</p>
       <div class="cta-baris">
-        <a class="primer besar" href="#/configure" data-log="cta_konfigurasi">${t('cta_configure')}</a>
-        <a class="sekunder besar" href="#/catalog">${t('cta_browse')}</a>
+        <a class="primer besar" href="#/catalog">${t('cta_browse')}</a>
+        <a class="sekunder besar" href="#/configure" data-log="cta_konfigurasi">${t('cta_configure')}</a>
       </div>
     </div>
     <figure class="hero-foto">
@@ -233,17 +255,18 @@ function cardHTML(p) {
     <div class="kartu-isi">
       <p class="kat">${esc(catLabel(p.cat))} · ${p.io === 'both' ? `${t('f_indoor')} / ${t('f_outdoor')}` : p.io === 'outdoor' ? t('f_outdoor') : t('f_indoor')}${p.dummy ? ' · <em>dummy</em>' : ''}</p>
       <h3><a href="#/product/${p.id}">${esc(p.name)}</a></h3>
-      <p class="harga">${money(R.prices[p.id])}</p>
+      <p class="harga">${priceTag(R.prices[p.id])}</p>
       <p class="redup kecil-teks">${t('lead')}: ~${R.days[p.id]} ${t('days')} · ${(p.g / 1000).toFixed(1)} kg ${LANG === 'id' ? 'plastik daur ulang' : 'recycled plastic'}</p>
       <div class="kartu-aksi">
-        <a class="tautan" href="#/product/${p.id}">${t('details')}</a>
-        <button type="button" class="kecil primer" data-add="${p.id}">+ ${t('add_to_layout')}</button>
+        <button type="button" class="kecil sekunder" data-add="${p.id}" title="${t('add_to_layout')}">+ 3D</button>
+        <button type="button" class="kecil primer" data-cart="${p.id}">🛒 ${kondisi === 'A' ? t('add_to_quote') : t('add_to_cart')}</button>
       </div>
     </div>
   </article>`;
 }
 function bindCards(root) {
   $$('[data-add]', root).forEach((b) => b.addEventListener('click', () => addToLayout(b.dataset.add)));
+  $$('[data-cart]', root).forEach((b) => b.addEventListener('click', () => addToCart(b.dataset.cart)));
 }
 function addToLayout(pid, color) {
   const p = cur();
@@ -331,7 +354,7 @@ VIEWS.product = (app, id) => {
       <p class="eyebrow">${esc(catLabel(p.cat))}${p.dummy ? ' · ' + t('dummy_note') : ''}</p>
       <h1>${esc(p.name)}</h1>
       <p class="lead">${esc(L(p))}</p>
-      <p class="harga besar">${money(R.prices[p.id])} <small class="redup">${LANG === 'id' ? 'harga retail, belum pajak & ongkir' : 'retail, excl. tax & shipping'}</small></p>
+      <p class="harga besar">${priceTag(R.prices[p.id])} <small class="redup">${LANG === 'id' ? 'harga retail, belum pajak & ongkir' : 'retail, excl. tax & shipping'}</small></p>
       <dl class="spes">
         <dt>${t('dims')}</dt><dd>${dimsText(p.dims)}${p.seat ? ` · seat ${p.seat} mm` : ''}</dd>
         <dt>${t('weight')}</dt><dd>${(p.w / 1000).toFixed(1)} kg</dd>
@@ -342,8 +365,13 @@ VIEWS.product = (app, id) => {
       <p class="kecil-teks">${productMats(p).map((m) => MATERIALS.find((x) => x.id === m).name).join(' / ')} · ${FINISHES.map((x) => L(x)).join(' · ')}</p>
       <div class="swatch-pilih">${COLORS.filter((c) => productMats(p).includes(c.type.toLowerCase())).map((c) => `<button type="button" class="sw-btn ${c.id === pick ? 'aktif' : ''}" data-pick="${c.id}" title="${c.name}${c.group === 'special' ? ' (special)' : ''}">${swatch(c)}</button>`).join('')}</div>
       <p class="kecil-teks" id="pick-label"></p>
+      <div class="qty-baris">
+        <label>${t('finish')}<select id="d-fin">${FINISHES.map((f) => `<option value="${f.id}" ${(p.io === 'outdoor' ? 'uv' : 'matte') === f.id ? 'selected' : ''}>${esc(L(f))}</option>`).join('')}</select></label>
+        <label>${t('qty_label')}<input type="number" id="d-qty" value="1" min="1" max="500"></label>
+      </div>
       <div class="cta-baris">
-        <button type="button" class="primer besar" id="tambah-layout">+ ${t('add_to_layout')}</button>
+        <button type="button" class="primer besar" id="tambah-keranjang">🛒 ${kondisi === 'A' ? t('add_to_quote') : t('add_to_cart')}</button>
+        <button type="button" class="sekunder besar" id="tambah-layout">+ ${t('add_to_layout')}</button>
       </div>
       <h2>${t('tech_specs')}</h2>
       <table class="tabel-spes">
@@ -374,6 +402,7 @@ VIEWS.product = (app, id) => {
   }));
   $$('[data-g]', app).forEach((b) => b.addEventListener('click', () => { $('#galeri-utama').innerHTML = `<img src="${b.dataset.g}" alt="">`; }));
   $('#tambah-layout').addEventListener('click', () => addToLayout(p.id, pick));
+  $('#tambah-keranjang').addEventListener('click', () => addToCart(p.id, pick, $('#d-fin').value, Math.max(1, Number($('#d-qty').value) || 1)));
   $('#dl-spec').addEventListener('click', () => { catat('unduh_spec', p.id); printSpec(p); });
   $('#dl-dxf').addEventListener('click', () => { catat('unduh_cad', p.id + '.dxf'); download(`${p.id}.dxf`, makeDXF(p), 'application/dxf'); });
   $('#dl-obj').addEventListener('click', () => { catat('unduh_cad', p.id + '.obj'); download(`${p.id}.obj`, makeOBJ(p), 'text/plain'); });
@@ -444,7 +473,7 @@ VIEWS.materials = (app) => {
       <thead><tr><th>Size</th><th>1 cm</th><th>2 cm</th></tr></thead>
       <tbody>${[[950, 400], [1000, 500], [1200, 600]].map(([a, b]) => {
         const s1 = sheets.find((s) => s.dims[0] === a && s.dims[2] === 10), s2 = sheets.find((s) => s.dims[0] === a && s.dims[2] === 20);
-        return `<tr><td>${a / 10} × ${b / 10} cm</td><td>${money(R.prices[s1.id])} <button type="button" class="kecil tautan" data-add="${s1.id}">+</button></td><td>${money(R.prices[s2.id])} <button type="button" class="kecil tautan" data-add="${s2.id}">+</button></td></tr>`;
+        return `<tr><td>${a / 10} × ${b / 10} cm</td><td>${priceTag(R.prices[s1.id])} <button type="button" class="kecil tautan" data-cart="${s1.id}">🛒</button></td><td>${priceTag(R.prices[s2.id])} <button type="button" class="kecil tautan" data-cart="${s2.id}">🛒</button></td></tr>`;
       }).join('')}</tbody>
     </table></div>
     <p class="kecil-teks redup">${t('sheet_terms')} ${LANG === 'id' ? 'Rekomendasi: 2 cm untuk top meja/stool, 1 cm untuk pelapis rangka.' : 'Recommended: 2 cm for table/stool tops, 1 cm for layering a framework.'}</p>
@@ -633,6 +662,7 @@ function configuratorView(app, p) {
     const m = $('#memuat-3d'); if (m) m.remove();
     window.R3D.mount(k, {
       getProject: () => p,
+      persist: () => { if (!readOnly) touch(p); },
       readOnly: () => readOnly,
       isMulti: () => S.ui.multi,
       gridOn: () => S.ui.grid,
@@ -1054,20 +1084,145 @@ function printSpec(p) {
     <p>${esc(L(p))}</p>
     <table class="tabel"><tr><th>${t('dims')}</th><td>${dimsText(p.dims)}</td></tr><tr><th>${t('weight')}</th><td>${(p.w / 1000).toFixed(1)} kg</td></tr><tr><th>${t('recycled')}</th><td>${(p.g / 1000).toFixed(2)} kg</td></tr>
     <tr><th>${t('material')}</th><td>${productMats(p).join(' / ').toUpperCase()}</td></tr><tr><th>${t('spec_load')}</th><td>${p.specs.load}</td></tr><tr><th>${t('spec_uv')}</th><td>${p.specs.uv}</td></tr><tr><th>${t('spec_fire')}</th><td>${p.specs.fire}</td></tr>
-    <tr><th>Retail price</th><td>${money(R.prices[p.id])}</td></tr></table>
+    <tr><th>Retail price</th><td>${hargaTampil() ? money(R.prices[p.id]) : t('price_on_request')}</td></tr></table>
     <h2>${t('main_colors')} / ${t('special_colors')}</h2><p>${COLORS.map((c) => `${c.name} (${c.type}${c.group === 'special' ? ', special' : ''})`).join(', ')}</p>
     <p class="kecil-teks">${t('variation_text')}</p>`);
+}
+
+// ========== KERANJANG ==========
+function cartCtx() {
+  if (!S.cart.ctx) S.cart.ctx = defaultCtx();
+  return S.cart.ctx;
+}
+function addToCart(pid, color, finish, qty = 1) {
+  const p = PMAP[pid];
+  const c = color || (p.io === 'outdoor' ? 'seaweed' : 'damson');
+  const mat = CMAP[c].type === 'LDPE' ? 'ldpe' : 'hdpe';
+  const fin = finish || (p.io === 'outdoor' ? 'uv' : 'matte');
+  const ex = S.cart.lines.find((l) => l.pid === pid && l.color === c && l.finish === fin);
+  if (ex) ex.qty += qty; else S.cart.lines.push({ id: uid('c'), pid, color: c, mat, finish: fin, qty });
+  cartCtx(); save();
+  catat('tambah_keranjang', `${pid}:${c}:${fin}:x${qty}`);
+  toast(`${p.name} ×${qty} ${t('added_cart')}`);
+  render();
+}
+// Keranjang diubah menjadi "proyek" sementara agar mesin estimasi & Sales bisa memakainya.
+function cartProject() {
+  const units = [];
+  S.cart.lines.forEach((l) => { for (let i = 0; i < l.qty; i++) units.push(l); });
+  const cols = Math.max(1, Math.ceil(Math.sqrt(units.length)));
+  const step = 1300;
+  const L = Math.max(3000, cols * step + 400), W = Math.max(3000, Math.ceil(units.length / cols) * step + 400);
+  return {
+    id: 'CART', name: LANG === 'id' ? `Pesanan katalog ${new Date().toLocaleDateString('id-ID')}` : `Catalogue order ${new Date().toLocaleDateString('en-GB')}`,
+    room: [L, W, 3000], ctx: cartCtx(), override: { pct: 0 }, notes: S.cart.notes || '', files: [], versions: [], status: 'cart', email: '',
+    items: units.map((l, i) => ({ uid: 'u' + i, pid: l.pid, x: 200 + step / 2 + (i % cols) * step, z: 200 + step / 2 + Math.floor(i / cols) * step, rot: 0, size: 'standard', dims: null, color: l.color, mat: l.mat, finish: l.finish, addons: [], group: null })),
+  };
+}
+function sourceFor(arg) { return arg === 'cart' ? cartProject() : cur(); }
+
+VIEWS.cart = (app) => {
+  const lines = S.cart.lines;
+  const showP = hargaTampil();
+  const p = cartProject();
+  const est = estimate(p, R);
+  const ctx = p.ctx;
+  const title = kondisi === 'A' && !showP ? t('quote_cart') : t('cart');
+  if (!lines.length) {
+    app.innerHTML = `<section class="kepala-halaman"><h1>${title}</h1><p>${t('cart_empty')}</p><div class="cta-baris"><a class="primer" href="#/catalog">${t('continue_shopping')}</a><a class="sekunder" href="#/configure">${t('cta_configure')}</a></div></section>`;
+    return;
+  }
+  const usd = est.total / R.fx.USD;
+  const canCheckout = showP && usd < R.checkoutThresholdUSD;
+  app.innerHTML = `<section class="kepala-halaman"><h1>${title}</h1></section>
+  <div class="keranjang">
+    <div class="kotak">
+      ${lines.map((l) => {
+        const pr = PMAP[l.pid];
+        const unit = itemUnitPrice({ pid: l.pid, size: 'standard', mat: l.mat, color: l.color, finish: l.finish, addons: [] }, R);
+        return `<div class="baris-keranjang">
+          <a href="#/product/${pr.id}">${productThumb(pr, l.color)}</a>
+          <div><strong>${esc(pr.name)}</strong> ${swatch(CMAP[l.color], 'mini')}<br><span class="kecil-teks redup">${dimsText(pr.dims)}${showP ? ` · @ ${money(unit)}` : ''}</span>
+            <div class="kontrol">
+              <select data-l="${l.id}" data-k="color" aria-label="${t('color')}">${COLORS.filter((c) => productMats(pr).includes(c.type.toLowerCase())).map((c) => `<option value="${c.id}" ${c.id === l.color ? 'selected' : ''}>${c.name}${c.group === 'special' ? ' ★' : ''}</option>`).join('')}</select>
+              <select data-l="${l.id}" data-k="finish" aria-label="${t('finish')}">${FINISHES.map((f) => `<option value="${f.id}" ${f.id === l.finish ? 'selected' : ''}>${esc(L(f))}</option>`).join('')}</select>
+              <input type="number" min="1" max="500" value="${l.qty}" data-l="${l.id}" data-k="qty" aria-label="${t('qty_label')}">
+              <button type="button" class="tautan" data-hapus="${l.id}">${t('remove')}</button>
+            </div></div>
+          <div class="kanan">${showP ? money(unit * l.qty) : ''}</div>
+        </div>`;
+      }).join('')}
+      <p class="kecil-teks"><a href="#/catalog">← ${t('continue_shopping')}</a> · <a href="#/configure">${t('or_configure')}</a></p>
+    </div>
+    <aside class="kotak ringkas">
+      <div class="dua">
+        <label>${t('destination')}<select id="k-country">${COUNTRIES.map((c) => `<option value="${c.id}" ${ctx.country === c.id ? 'selected' : ''}>${esc(L(c))}</option>`).join('')}</select></label>
+        ${ctx.country === 'ID'
+          ? `<label>${t('zone')}<select id="k-zone">${Object.entries(R.domesticZones).map(([k, z]) => `<option value="${k}" ${ctx.zone === k ? 'selected' : ''}>${esc(z.en)}</option>`).join('')}</select></label>`
+          : `<label>${t('incoterm')}<select id="k-inco">${['FOB', 'CIF', 'DDP'].map((x) => `<option ${ctx.incoterm === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>`}
+        <label class="span2">${t('segment')}<select id="k-seg">${CUSTOMER_SEGMENTS.map((s) => `<option value="${s.id}" ${ctx.segment === s.id ? 'selected' : ''}>${esc(L(s))}</option>`).join('')}</select></label>
+      </div>
+      ${showP ? estimateBody(p, est, false) : `<p class="kecil-teks">${t('quote_cart_note')}</p><p class="kecil-teks">${est.units} ${t('items')}</p>`}
+      ${showP && !canCheckout ? `<p class="kecil-teks bendera review">${t('checkout_blocked_value')} (${LANG === 'id' ? 'batas' : 'limit'} USD ${R.checkoutThresholdUSD.toLocaleString()})</p>` : ''}
+      <div class="konversi">
+        ${showP ? `<button type="button" class="${canCheckout ? 'primer' : 'sekunder'} lebar" id="k-checkout" ${canCheckout ? '' : 'disabled'}>${t('checkout')}</button>` : ''}
+        <button type="button" class="${canCheckout ? 'sekunder' : 'primer'} lebar" id="k-sales">${showP ? t('send_sales') : t('request_quote')}</button>
+      </div>
+    </aside>
+  </div>`;
+  $$('[data-l]', app).forEach((el) => el.addEventListener('change', () => {
+    const l = S.cart.lines.find((x) => x.id === el.dataset.l);
+    if (el.dataset.k === 'qty') l.qty = Math.max(1, Math.min(500, Number(el.value) || 1));
+    else if (el.dataset.k === 'color') { l.color = el.value; l.mat = CMAP[l.color].type === 'LDPE' ? 'ldpe' : 'hdpe'; } else l.finish = el.value;
+    save(); catat('ubah_keranjang', `${l.pid}:${el.dataset.k}=${el.value}`); render();
+  }));
+  $$('[data-hapus]', app).forEach((b) => b.addEventListener('click', () => { const l = S.cart.lines.find((x) => x.id === b.dataset.hapus); S.cart.lines = S.cart.lines.filter((x) => x !== l); save(); catat('hapus_keranjang', l.pid); render(); }));
+  const upd = (k, v) => { ctx[k] = v; save(); catat('ubah_tujuan', `cart:${k}=${v}`); render(); };
+  $('#k-country').addEventListener('change', (e) => upd('country', e.target.value));
+  const z = $('#k-zone'); if (z) z.addEventListener('change', (e) => upd('zone', e.target.value));
+  const inc = $('#k-inco'); if (inc) inc.addEventListener('change', (e) => upd('incoterm', e.target.value));
+  $('#k-seg').addEventListener('change', (e) => upd('segment', e.target.value));
+  const bd = $('#rincian'); if (bd) bd.addEventListener('toggle', () => { breakdownOpen = bd.open; if (bd.open) catat('buka_rincian', 'cart'); });
+  const ck = $('#k-checkout'); if (ck) ck.addEventListener('click', () => { coStep = 0; catat('checkout_mulai', `cart:${money(est.total)}`); go('#/checkout/cart'); });
+  $('#k-sales').addEventListener('click', () => { catat('konsultasi_mulai', 'cart'); go('#/consult/cart'); });
+};
+
+// ========== POPUP NEGARA & MATA UANG ==========
+const CUR_BY_COUNTRY = { ID: 'IDR', SG: 'SGD', JP: 'JPY', MY: 'USD', AU: 'USD', GB: 'EUR', US: 'USD' };
+function localeModal(first) {
+  let c = (S.locale && S.locale.country) || 'ID';
+  let k = S.cur || CUR_BY_COUNTRY[c];
+  modal(`<h2>${t('locale_title')}</h2><p class="kecil-teks">${t('locale_sub')}</p>
+    <div class="lokasi-grid">${COUNTRIES.map((x) => `<label class="opsi-item"><input type="radio" name="lok" value="${x.id}" ${x.id === c ? 'checked' : ''}> ${esc(L(x))}</label>`).join('')}</div>
+    <label>${t('currency')}<select id="lok-cur">${CURRENCIES.map((x) => `<option ${x === k ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+    <button type="button" class="primer lebar" id="lok-simpan">${t('locale_save')}</button>`, (m, close) => {
+    $$('input[name="lok"]', m).forEach((r) => r.addEventListener('change', () => { c = r.value; $('#lok-cur', m).value = CUR_BY_COUNTRY[c]; }));
+    const apply = () => {
+      k = $('#lok-cur', m).value;
+      S.locale = { country: c, cur: k }; S.cur = k;
+      cartCtx().country = c;
+      const pr = S.projects.find((x) => x.id === S.current);
+      if (pr && !pr.items.length) pr.ctx.country = c;
+      save(); catat(first ? 'pilih_negara_awal' : 'ubah_negara', `${c}:${k}`);
+      close(); render();
+    };
+    $('#lok-simpan', m).addEventListener('click', apply);
+    $('.tutup-modal', m).addEventListener('click', () => { if (!S.locale) { S.locale = { country: c, cur: S.cur }; save(); render(); } });
+  });
 }
 
 // ========== CHECKOUT ==========
 let coStep = 0;
 let coData = { company: '', tax: '', billing: '', delivery: '', email: '', phone: '', pay: 'deposit', method: '' };
-VIEWS.checkout = (app) => {
-  const p = cur();
+VIEWS.checkout = (app, arg) => {
+  const p = sourceFor(arg);
+  const backHref = arg === 'cart' ? '#/cart' : '#/configure';
+  const consultHref = arg === 'cart' ? '#/consult/cart' : '#/consult';
+  if (arg === 'cart' && kondisi === 'A' && !hargaTampil()) { go('#/consult/cart'); return; }
   const est = estimate(p, R);
   const usd = est.total / R.fx.USD;
-  if (!est.units || est.hasCustom || usd >= R.checkoutThresholdUSD) {
-    app.innerHTML = `<section class="kepala-halaman"><h1>${t('checkout')}</h1><p>${est.units ? (est.hasCustom ? t('checkout_blocked_custom') : t('checkout_blocked_value')) : t('empty_boq')}</p><a class="primer" href="#/consult">${t('send_sales')}</a> <a class="sekunder" href="#/configure">${t('back')}</a></section>`;
+  if (coStep !== 3 && (!est.units || est.hasCustom || usd >= R.checkoutThresholdUSD)) {
+    app.innerHTML = `<section class="kepala-halaman"><h1>${t('checkout')}</h1><p>${est.units ? (est.hasCustom ? t('checkout_blocked_custom') : t('checkout_blocked_value')) : t('empty_boq')}</p><a class="primer" href="${consultHref}">${t('send_sales')}</a> <a class="sekunder" href="${backHref}">${t('back')}</a></section>`;
     return;
   }
   const steps = [t('co_cart'), t('co_company'), t('co_payment'), t('co_done')];
@@ -1097,17 +1252,17 @@ VIEWS.checkout = (app) => {
       <p class="label-sim">${t('sim_payment')}</p>`;
   } else {
     const o = S.orders[0];
-    body = `<div class="sukses"><h2>✓ ${t('order_conf')}</h2><p>${o ? `${o.id} · ${money(o.paid)} ${o.method.includes('transfer') ? (LANG === 'id' ? 'menunggu transfer' : 'awaiting transfer') : (LANG === 'id' ? 'terbayar' : 'paid')}` : ''}</p>
+    body = `<div class="sukses"><h2>✓ ${t('order_conf')}</h2><p>${o ? `${o.id} · ${om(o.paid, o)} ${LANG === 'id' ? 'terbayar' : 'paid'} · ${t('est_arrival')}: ${schedText(o.schedule.delivered)}` : ''}</p>
       <div class="baris-tombol"><button type="button" class="sekunder" id="cetak-proforma">⬇ ${t('proforma')}</button><button type="button" class="sekunder" id="cetak-konf">⬇ ${t('order_conf')}</button><a class="primer" href="#/account">${t('my_orders')}</a></div></div>`;
   }
   app.innerHTML = `<section class="checkout">
     <h1>${t('checkout')}</h1>
     <ol class="stepper">${steps.map((s, i) => `<li class="${i === coStep ? 'aktif' : i < coStep ? 'lewat' : ''}">${i + 1}. ${s}</li>`).join('')}</ol>
     <div class="co-grid"><div class="kotak">${body}</div>
-      <aside class="kotak ringkas"><h3>${esc(p.name)}</h3><p>${est.units} ${t('items')} · ${countryLabel(p.ctx.country)}</p><p class="harga besar">${money(est.total)}</p>
+      <aside class="kotak ringkas"><h3>${esc(coStep === 3 && S.orders[0] ? S.orders[0].projectName : p.name)}</h3><p>${coStep === 3 && S.orders[0] ? S.orders[0].units : est.units} ${t('items')} · ${countryLabel(p.ctx.country)}</p><p class="harga besar">${coStep === 3 && S.orders[0] ? om(S.orders[0].total, S.orders[0]) : money(est.total)}</p>
       ${coStep === 2 ? `<p>${LANG === 'id' ? 'Dibayar sekarang' : 'Due now'}: <strong>${money(payAmt)}</strong></p>` : ''}
       <p class="kecil-teks">♲ ${est.recycledKg.toFixed(1)} ${t('sus_kg')}</p>
-      ${coStep < 3 ? `<div class="baris-tombol">${coStep > 0 ? `<button type="button" class="sekunder" id="co-back">${t('back')}</button>` : `<a class="sekunder" href="#/configure">${t('back')}</a>`}
+      ${coStep < 3 ? `<div class="baris-tombol">${coStep > 0 ? `<button type="button" class="sekunder" id="co-back">${t('back')}</button>` : `<a class="sekunder" href="${backHref}">${t('back')}</a>`}
       <button type="button" class="primer" id="co-next">${coStep === 2 ? t('pay_now') : t('next')}</button></div>` : ''}</aside></div>
   </section>`;
   $$('[data-co]', app).forEach((el) => el.addEventListener('input', () => { coData[el.dataset.co] = el.value; }));
@@ -1117,48 +1272,74 @@ VIEWS.checkout = (app) => {
   const nx = $('#co-next');
   if (nx) nx.addEventListener('click', () => {
     if (coStep === 1) { const f = $('#co-form'); if (!f.reportValidity()) return; }
-    if (coStep === 2) return simulatePay(p, est, payAmt);
+    if (coStep === 2) return simulatePay(p, est, payAmt, arg === 'cart' ? 'cart' : 'konfigurator');
     coStep++; catat('checkout_langkah', steps[coStep]); render();
   });
   const pr = $('#cetak-proforma'); if (pr) pr.addEventListener('click', () => { catat('unduh_proforma'); printInvoice(S.orders[0], 'proforma'); });
   const kf = $('#cetak-konf'); if (kf) kf.addEventListener('click', () => { catat('unduh_konfirmasi'); printInvoice(S.orders[0], 'conf'); });
 };
-function simulatePay(p, est, payAmt) {
+function simulatePay(p, est, payAmt, jalur) {
   const transfer = coData.method.includes('transfer');
   modal(`<div class="bayar-sim"><p class="label-sim">${t('sim_payment')}</p><h2>${esc(coData.method.split('·')[0])}</h2>
     ${coData.method.includes('QRIS') ? '<div class="qris-palsu" aria-label="QR placeholder"></div>' : ''}
     ${coData.method.includes('Virtual') ? `<p>VA: <code>8808 ${Math.floor(1e7 + Math.random() * 9e7)}</code></p>` : ''}
-    <p class="harga besar">${money(payAmt)}</p><button type="button" class="primer lebar" id="konfirm-bayar">${transfer ? (LANG === 'id' ? 'Buat proforma invoice' : 'Generate proforma invoice') : (LANG === 'id' ? 'Simulasikan pembayaran berhasil' : 'Simulate successful payment')}</button></div>`, (m, close) => {
+    <p class="harga besar">${money(payAmt)}</p>${transfer ? `<p class="kecil-teks">${LANG === 'id' ? 'Transfer ke: Bank Contoh Indonesia · 000-000-0000 a/n PT Robries (fiktif). Pesanan dibuat setelah dana diterima.' : 'Transfer to: Bank Contoh Indonesia · 000-000-0000, PT Robries (fictional). The order is created once funds are received.'}</p>` : ''}<button type="button" class="primer lebar" id="konfirm-bayar">${transfer ? t('confirm_transfer') : (LANG === 'id' ? 'Simulasikan pembayaran berhasil' : 'Simulate successful payment')}</button></div>`, (m, close) => {
     $('#konfirm-bayar', m).addEventListener('click', () => {
       const o = {
         id: 'RB-ORD-' + Math.floor(1000 + Math.random() * 9000), projectId: p.id, projectName: p.name, created: Date.now(), total: est.total, paid: payAmt,
-        payType: coData.pay, method: coData.method, company: { ...coData }, stage: transfer ? 0 : 1, country: p.ctx.country, units: est.units, kg: est.recycledKg,
+        payType: coData.pay, method: coData.method, company: { ...coData }, stage: 0, country: p.ctx.country, units: est.units, kg: est.recycledKg,
         boq: est.boq.map((r) => ({ name: PMAP[r.it.pid].name, spec: specText(r.it), qty: r.qty, unit: r.unit, sub: r.sub })), lead: est.lead, transit: est.transit,
+        schedule: makeSchedule(est.lead, est.transit, Date.now()), jalur,
       };
-      S.orders.unshift(o); p.status = 'ordered'; save();
-      catat('checkout_bayar', `${o.id}:${coData.pay}:${coData.method}:${money(payAmt)}`);
+      lockOrderCur(o);
+      S.orders.unshift(o); p.status = 'ordered';
+      if (jalur === 'cart') S.cart.lines = [];
+      save();
+      catat('checkout_bayar', `${o.id}:${jalur}:${coData.pay}:${coData.method}:${money(payAmt)}`);
       close(); coStep = 3; render();
       tanyaSkor('checkout');
     });
   });
 }
-const STAGES = ['Awaiting payment', 'Deposit received', 'Material sourcing', 'Pressing sheets', 'CNC & fabrication', 'QC', 'Packing', 'Shipped', 'Delivered'];
+const STAGES = ['Deposit received', 'Production', 'Packing', 'Shipping', 'Delivered'];
+const stageLabel = (i) => t('st' + Math.min(i, 4));
+// Jadwal perkiraan dari lead time saat checkout: tanggal selesai (min–maks) per tahap.
+function makeSchedule(ld, transit, start) {
+  if (!ld) return null;
+  const d = (n) => start + n * 864e5;
+  const tr = transit || [0, 0];
+  return {
+    deposit: [d(0), d(0)],
+    production: [d(ld.prod), d(ld.shipMax - ld.qc)],
+    packing: [d(ld.shipMin), d(ld.shipMax)],
+    shipping: [d(ld.shipMin + 1), d(ld.shipMax + 2)],
+    delivered: [d(ld.shipMin + tr[0]), d(ld.shipMax + tr[1])],
+  };
+}
+function schedText(r) {
+  if (!r) return '—';
+  const f = (x) => new Date(x).toLocaleDateString(LANG === 'id' ? 'id-ID' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return r[0] === r[1] ? f(r[0]) : `${f(r[0])} – ${f(r[1])}`;
+}
 function printInvoice(o, kind) {
   if (!o) return;
   const due = kind === 'proforma' ? o.paid : o.total;
   printHTML(`${sheetHeader(kind === 'proforma' ? t('proforma') : t('order_conf'), `${o.id} · ${new Date(o.created).toLocaleDateString()}`)}
     <div class="dua-kolom"><div><strong>${LANG === 'id' ? 'Kepada' : 'Bill to'}</strong><p>${esc(o.company.company)}<br>${esc(o.company.tax)}<br>${esc(o.company.billing)}</p></div>
     <div><strong>${t('delivery')}</strong><p>${esc(o.company.delivery)}</p></div></div>
-    <table class="tabel"><thead><tr><th>${t('qty')}</th><th>${t('spec')}</th><th>${t('unit')}</th><th>${t('subtotal')}</th></tr></thead><tbody>${o.boq.map((r) => `<tr><td>${r.qty}</td><td>${esc(r.name)} — ${esc(r.spec)}</td><td>${money(r.unit)}</td><td>${money(r.sub)}</td></tr>`).join('')}</tbody></table>
-    <p><strong>${t('total')}:</strong> ${money(o.total)} (${LANG === 'id' ? 'termasuk pengemasan, ongkir, pajak sesuai estimasi' : 'incl. packaging, shipping, taxes as estimated'})</p>
-    <p><strong>${kind === 'proforma' ? (LANG === 'id' ? 'Jumlah ditagih sekarang' : 'Amount due now') : (LANG === 'id' ? 'Dibayar' : 'Paid')}:</strong> ${money(due)} · ${esc(o.method)} · ${o.payType === 'deposit' ? `${t('pay_deposit')} ${R.depositPct}%, ${t('pay_balance')}` : t('pay_full')}</p>
+    <table class="tabel"><thead><tr><th>${t('qty')}</th><th>${t('spec')}</th><th>${t('unit')}</th><th>${t('subtotal')}</th></tr></thead><tbody>${o.boq.map((r) => `<tr><td>${r.qty}</td><td>${esc(r.name)} — ${esc(r.spec)}</td><td>${om(r.unit, o)}</td><td>${om(r.sub, o)}</td></tr>`).join('')}</tbody></table>
+    <p><strong>${t('total')}:</strong> ${om(o.total, o)} (${LANG === 'id' ? 'termasuk pengemasan, ongkir, pajak sesuai estimasi' : 'incl. packaging, shipping, taxes as estimated'})</p>
+    <p><strong>${kind === 'proforma' ? (LANG === 'id' ? 'Jumlah ditagih sekarang' : 'Amount due now') : (LANG === 'id' ? 'Dibayar' : 'Paid')}:</strong> ${om(due, o)} · ${esc(o.method)} · ${o.payType === 'deposit' ? `${t('pay_deposit')} ${R.depositPct}%, ${t('pay_balance')}` : t('pay_full')}</p>
     <p>Bank: Bank Contoh Indonesia · Acc. 000-000-0000 · a/n PT Robries (fictional)</p>
+    ${o.schedule ? `<p><strong>${t('est_arrival')}:</strong> ${schedText(o.schedule.delivered)}</p>` : ''}
     <p class="ps-sus">♲ ${o.kg.toFixed(1)} ${t('sus_kg')}</p>`);
 }
 
 // ========== CONSULT SALES ==========
-VIEWS.consult = (app) => {
-  const p = cur();
+VIEWS.consult = (app, arg) => {
+  const p = sourceFor(arg);
+  const backHref = arg === 'cart' ? '#/cart' : '#/configure';
+  const showP = hargaTampil() || (arg !== 'cart' && estSnapshot && estSnapshot.pid === p.id) || kondisi === 'B';
   const est = estimate(p, R);
   const route = routeLead(p.ctx.country, p.ctx.segment);
   const tzUser = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1197,13 +1378,14 @@ VIEWS.consult = (app) => {
         <div class="slot-grid">${slots.map((s, i) => `<label class="slot"><input type="radio" name="slot" value="${s.toISOString()}" ${i === 0 ? 'checked' : ''}><span>${fmtSlot(s)}</span></label>`).join('')}</div></div>
       <button type="button" class="primer besar" id="kirim-sales">${t('send_sales')}</button>
     </div>
-    <aside class="kotak ringkas"><h3>${esc(p.name)}</h3>${p.thumb ? `<img src="${p.thumb}" alt="Layout" class="thumb-layout">` : ''}<p>${est.units} ${t('items')}${est.hasCustom ? ' · ⚑ custom' : ''}</p><p class="harga besar">${money(est.total)}</p><p class="kecil-teks">${t('est_label')} · ♲ ${est.recycledKg.toFixed(1)} kg</p><a href="#/configure" class="sekunder">${t('back')}</a></aside></div>
+    <aside class="kotak ringkas"><h3>${esc(p.name)}</h3>${p.thumb ? `<img src="${p.thumb}" alt="Layout" class="thumb-layout">` : ''}<p>${est.units} ${t('items')}${est.hasCustom ? ' · ⚑ custom' : ''}</p>${showP ? `<p class="harga besar">${money(est.total)}</p><p class="kecil-teks">${t('est_label')} · ♲ ${est.recycledKg.toFixed(1)} kg</p>` : `<p class="kecil-teks">${t('quote_cart_note')}</p>`}<a href="${backHref}" class="sekunder">${t('back')}</a></aside></div>
   </section>`;
   $$('input[name="ch"]', app).forEach((r) => r.addEventListener('change', () => { $('#slot-box').hidden = r.value !== 'call' || !r.checked; }));
   $('#kirim-sales').addEventListener('click', () => {
     const f = $('#sales-form');
     if (!f.reportValidity()) return;
     p.ctx.segment = $('#sf-seg').value; p.ctx.country = $('#sf-country').value; p.notes = $('#sf-notes').value;
+    if (arg === 'cart') { S.cart.notes = p.notes; }
     p.files = [...$('#sf-files').files].map((x) => x.name);
     const rt = routeLead(p.ctx.country, p.ctx.segment);
     const ch = $('input[name="ch"]:checked').value;
@@ -1214,9 +1396,12 @@ VIEWS.consult = (app) => {
       country: p.ctx.country, segment: p.ctx.segment, routedTo: rt, channel: ch, slot, notes: p.notes, files: p.files, total: e2.total, units: e2.units, custom: e2.hasCustom,
       snapshot: encodeProject(p), status: 'new', salesNotes: '', followUp: '', overridePct: 0,
     };
-    S.leads.unshift(lead); p.status = 'with sales'; save();
-    catat('kirim_sales', `${lead.id}:${rt.name}:${ch}${slot ? ':' + slot : ''}`);
-    const msg = `Hi ROBRIES, I'd like to discuss project "${p.name}" (${e2.units} items, estimate ${money(e2.total)}). Ref ${lead.id}. View: ${share}`;
+    lead.jalur = arg === 'cart' ? 'cart' : 'konfigurator';
+    S.leads.unshift(lead); p.status = 'with sales';
+    if (arg === 'cart') S.cart.lines = [];
+    save();
+    catat('kirim_sales', `${lead.id}:${lead.jalur}:${rt.name}:${ch}${slot ? ':' + slot : ''}`);
+    const msg = `Hi ROBRIES, I'd like to discuss project "${p.name}" (${e2.units} items${showP ? `, estimate ${money(e2.total)}` : ''}). Ref ${lead.id}. View: ${share}`;
     modal(`<div class="sukses"><h2>✓ ${t('lead_sent')} ${lead.id}</h2><p>${t('route_to')}: <strong>${esc(rt.name)}</strong></p>
       ${ch === 'call' ? `<p>${t('book_call')}: <strong>${fmtSlot(new Date(slot))}</strong> (${esc(tzUser)})</p>` : ''}
       <div class="baris-tombol">
@@ -1243,34 +1428,29 @@ VIEWS.account = (app) => {
   }
   const myOrders = S.orders;
   app.innerHTML = `<section class="kepala-halaman"><p class="eyebrow">${esc(S.role)} · ${esc(S.account.name)}</p><h1>${t('nav_account')}</h1>
-    <div class="baris-tombol">
-      <label class="cek"><input type="checkbox" id="trade" ${S.account.tradeApproved ? 'checked' : ''}> ${LANG === 'id' ? 'Akun trade arsitek/desainer (disetujui – simulasi)' : 'Architect/designer trade account (approved – simulated)'}</label>
-      <label class="cek"><input type="checkbox" id="wholesale" ${S.account.wholesaleApproved ? 'checked' : ''}> ${LANG === 'id' ? 'Akun grosir disetujui (simulasi)' : 'Wholesale account approved (simulated)'}</label>
-    </div></section>
+</section>
     ${projectsHTML()}
-    <section class="blok"><h2>${t('my_quotes')}</h2>${S.quotes.length ? `<div class="tabel-scroll"><table class="tabel"><thead><tr><th>ID</th><th>${t('project_name')}</th><th>${t('total')}</th><th>${t('valid_until')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${S.quotes.map((q) => `<tr><td>${q.id}</td><td>${esc(q.projectName)}</td><td>${money(q.total)}</td><td>${new Date(q.valid).toLocaleDateString()}</td><td>${q.status}</td><td>${q.status === 'sent' ? `<button type="button" class="kecil primer" data-accept="${q.id}">${LANG === 'id' ? 'Terima' : 'Accept'}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : `<p class="redup">${t('no_data')}</p>`}</section>
+    <section class="blok"><h2>${t('my_quotes')}</h2>${S.quotes.length ? `<div class="tabel-scroll"><table class="tabel"><thead><tr><th>ID</th><th>${t('project_name')}</th><th>${t('total')}</th><th>${t('valid_until')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${S.quotes.map((q) => `<tr><td>${q.id}</td><td>${esc(q.projectName)}</td><td>${money(q.total)}</td><td>${new Date(q.valid).toLocaleDateString()}</td><td>${q.status}</td><td>${q.status === 'sent' ? `<a class="kecil primer" href="#/pay/${q.id}">${t('accept_pay')}</a>` : ''}</td></tr>`).join('')}</tbody></table></div>` : `<p class="redup">${t('no_data')}</p>`}</section>
     <section class="blok"><h2>${t('my_orders')}</h2>${myOrders.length ? myOrders.map(orderCard).join('') : `<p class="redup">${t('no_data')}</p>`}</section>
     <section class="blok"><h2>CAD & spec downloads</h2><div class="chip-baris">${[...new Set(S.projects.flatMap((p) => p.items.map((i) => i.pid)))].map((pid) => `<button type="button" class="chip" data-dxf="${pid}">⬇ ${esc(PMAP[pid].name)} .dxf</button>`).join('') || `<span class="redup">${t('no_data')}</span>`}</div></section>`;
-  $('#trade').addEventListener('change', (e) => { S.account.tradeApproved = e.target.checked; save(); catat('akun_trade', e.target.checked); });
-  $('#wholesale').addEventListener('change', (e) => { S.account.wholesaleApproved = e.target.checked; save(); catat('akun_grosir', e.target.checked); });
-  $$('[data-accept]', app).forEach((b) => b.addEventListener('click', () => {
-    const q = S.quotes.find((x) => x.id === b.dataset.accept); q.status = 'accepted';
-    quoteToOrder(q); catat('terima_penawaran', q.id); render();
-  }));
   $$('[data-dxf]', app).forEach((b) => b.addEventListener('click', () => { const p = PMAP[b.dataset.dxf]; catat('unduh_cad', p.id); download(`${p.id}.dxf`, makeDXF(p), 'application/dxf'); }));
   bindProjects(app);
 };
 function orderCard(o) {
-  return `<article class="order-kartu"><div class="judul-baris"><h3>${o.id} · ${esc(o.projectName)}</h3><span class="chip">${STAGES[o.stage]}</span></div>
-    <ol class="progres">${STAGES.slice(1).map((s, i) => `<li class="${i + 1 <= o.stage ? 'lewat' : ''}">${s}</li>`).join('')}</ol>
-    <p class="kecil-teks">${money(o.total)} · ${LANG === 'id' ? 'dibayar' : 'paid'} ${money(o.paid)} · ${esc(o.method)} · ♲ ${o.kg.toFixed(1)} kg</p>
+  const st = Math.min(o.stage || 0, STAGES.length - 1);
+  const keys = ['deposit', 'production', 'packing', 'shipping', 'delivered'];
+  const sc = o.schedule;
+  return `<article class="order-kartu"><div class="judul-baris"><h3>${o.id} · ${esc(o.projectName)}</h3><span class="chip">${stageLabel(st)}</span></div>
+    ${sc ? `<p class="kecil-teks"><strong>${t('est_arrival')}: ${schedText(sc.delivered)}</strong>${o.lead ? ` · ${weeks(o.lead.shipMin)}–${weeks(o.lead.shipMax)} ${t('weeks')} ${t('to_ship')}` : ''}</p>` : ''}
+    <ol class="jadwal" aria-label="${t('est_dates')}">${STAGES.map((s, i) => `<li class="${i <= st ? 'lewat' : ''}"><strong>${stageLabel(i)}</strong>${sc ? (i === 0 ? schedText(sc.deposit) : `${LANG === 'id' ? 'perk.' : 'est.'} ${schedText(sc[keys[i]])}`) : ''}</li>`).join('')}</ol>
+    <p class="kecil-teks">${om(o.total, o)} · ${LANG === 'id' ? 'dibayar' : 'paid'} ${om(o.paid, o)}${o.payType === 'deposit' ? ` (${t('pay_deposit')} ${o.depositPct || R.depositPct}%)` : ''} · ${esc(o.method)} · ♲ ${o.kg.toFixed(1)} kg${o.cur ? ` · ${o.cur} 🔒` : ''}</p>
     <p class="kecil-teks redup">${LANG === 'id' ? 'Status produksi dummy — nanti tersinkron dengan dashboard manufaktur/ERP.' : 'Dummy production status — future sync with manufacturing dashboard/ERP.'}</p></article>`;
 }
 function projectsHTML() {
   const folders = [...new Set(S.projects.map((p) => p.folder || 'General'))];
   return `<section class="blok"><h2>${t('my_projects')}</h2>${S.projects.length ? folders.map((f) => `<h3 class="folder">📁 ${esc(f)}</h3><div class="grid-proyek-saya">${S.projects.filter((p) => (p.folder || 'General') === f).map((p) => {
     const e = estimate(p, R);
-    return `<article class="kotak proyek-saya">${p.thumb ? `<img src="${p.thumb}" alt="">` : ''}<h4>${esc(p.name)}</h4><p class="kecil-teks">${e.units} ${t('items')} · ${money(e.total)} · ${esc(p.status)}<br>${new Date(p.updated).toLocaleString()}</p>
+    return `<article class="kotak proyek-saya">${p.thumb ? `<img src="${p.thumb}" alt="">` : ''}<h4>${esc(p.name)}</h4><p class="kecil-teks">${e.units} ${t('items')} · ${hargaTampil() ? money(e.total) : t('price_on_request')} · ${esc(p.status)}<br>${new Date(p.updated).toLocaleString()}</p>
       <div class="baris-tombol"><button type="button" class="kecil primer" data-open="${p.id}">${t('open')}</button><button type="button" class="kecil sekunder" data-folder="${p.id}">${t('folder')}</button><button type="button" class="kecil sekunder" data-share="${p.id}">🔗</button><button type="button" class="kecil sekunder" data-delp="${p.id}">${t('del')}</button></div></article>`;
   }).join('')}</div>`).join('') : `<p class="redup">${t('no_data')}</p>`}</section>`;
 }
@@ -1337,14 +1517,65 @@ function leadModal(l) {
     });
   });
 }
-function quoteToOrder(q) {
-  const o = { id: 'RB-ORD-' + Math.floor(1000 + Math.random() * 9000), projectId: null, projectName: q.projectName, created: Date.now(), total: q.total, paid: 0, payType: 'deposit', method: 'Bank transfer · Proforma invoice', company: { company: q.company, tax: '', billing: '', delivery: '' }, stage: 0, country: q.country, units: q.units, kg: q.kg, boq: q.boq };
+// Penawaran hanya menjadi pesanan setelah dibayar (minimal DP).
+function quoteToOrder(q, pay) {
+  if (!pay || !(pay.amount > 0)) throw new Error('Payment required before an order is created');
+  let lead = null, transit = null;
+  try { const e = estimate(decodeProject(q.snapshot), R); lead = e.lead; transit = e.transit; } catch (e) { /* abaikan */ }
+  const now = Date.now();
+  const o = { id: 'RB-ORD-' + Math.floor(1000 + Math.random() * 9000), projectId: null, projectName: q.projectName, created: now, total: q.total, paid: pay.amount, payType: pay.type, method: pay.method, company: { company: q.company, tax: '', billing: '', delivery: '' }, stage: 0, country: q.country, units: q.units, kg: q.kg, boq: q.boq, quoteId: q.id, lead, transit, schedule: makeSchedule(lead, transit, now), jalur: 'penawaran' };
+  lockOrderCur(o);
   S.orders.unshift(o);
   const l = S.leads.find((x) => x.id === q.leadId); if (l) l.status = 'won';
-  q.status = 'ordered';
+  q.status = 'paid';
   save();
   return o;
 }
+
+// ========== BAYAR PENAWARAN ==========
+let qpData = { pay: 'deposit', method: '' };
+VIEWS.pay = (app, qid) => {
+  const q = S.quotes.find((x) => x.id === qid);
+  if (!q) { go('#/account'); return; }
+  if (q.status !== 'sent') {
+    app.innerHTML = `<section class="kepala-halaman"><h1>${q.id}</h1><p>${t('status')}: ${esc(q.status)}</p><a class="primer" href="#/account">${t('my_orders')}</a></section>`;
+    return;
+  }
+  const isID = q.country === 'ID';
+  const methods = isID ? ['Midtrans · Virtual Account (BCA/Mandiri/BNI)', 'Midtrans · QRIS', 'Xendit · Credit/debit card', 'Bank transfer · Proforma invoice'] : ['Stripe · Card', 'Bank transfer (SWIFT) · Proforma invoice'];
+  if (!methods.includes(qpData.method)) qpData.method = methods[0];
+  const amt = qpData.pay === 'deposit' ? (q.total * R.depositPct) / 100 : q.total;
+  app.innerHTML = `<section class="checkout"><h1>${t('quote_pay_title')} · ${q.id}</h1>
+    <p class="kecil-teks">${t('quote_pay_note')}</p>
+    <div class="co-grid"><div class="kotak">
+      <table class="tabel"><thead><tr><th>${t('qty')}</th><th>${t('spec')}</th><th>${t('unit')}</th><th>${t('subtotal')}</th></tr></thead><tbody>${q.boq.map((r) => `<tr><td>${r.qty}</td><td>${esc(r.name)} — ${esc(r.spec)}</td><td>${money(r.unit)}</td><td>${money(r.sub)}</td></tr>`).join('')}</tbody></table>
+      <p class="label">${t('pay_method')}</p>
+      <div class="opsi">${methods.map((m) => `<label class="opsi-item"><input type="radio" name="qmet" value="${esc(m)}" ${qpData.method === m ? 'checked' : ''}> ${esc(m)}</label>`).join('')}</div>
+      <p class="label">${LANG === 'id' ? 'Skema pembayaran' : 'Payment terms'}</p>
+      <div class="opsi">
+        <label class="opsi-item"><input type="radio" name="qpay" value="deposit" ${qpData.pay === 'deposit' ? 'checked' : ''}> ${t('pay_deposit')} ${R.depositPct}% — ${money((q.total * R.depositPct) / 100)} <small>(${t('pay_balance')})</small></label>
+        <label class="opsi-item"><input type="radio" name="qpay" value="full" ${qpData.pay === 'full' ? 'checked' : ''}> ${t('pay_full')} — ${money(q.total)}</label>
+      </div>
+      <p class="label-sim">${t('sim_payment')}</p>
+    </div>
+    <aside class="kotak ringkas"><h3>${esc(q.projectName)}</h3><p>${esc(q.company)} · ${countryLabel(q.country)}</p><p class="harga besar">${money(q.total)}</p>
+      <p>${LANG === 'id' ? 'Dibayar sekarang' : 'Due now'}: <strong>${money(amt)}</strong></p><p class="kecil-teks redup">🔒 ${t('cur_locked')}</p>
+      <div class="baris-tombol"><a class="sekunder" href="#/account">${t('back')}</a><button type="button" class="primer" id="qp-bayar">${t('pay_now')}</button></div></aside></div></section>`;
+  $$('input[name="qmet"]', app).forEach((r) => r.addEventListener('change', () => { qpData.method = r.value; }));
+  $$('input[name="qpay"]', app).forEach((r) => r.addEventListener('change', () => { qpData.pay = r.value; render(); }));
+  $('#qp-bayar').addEventListener('click', () => {
+    const transfer = qpData.method.includes('transfer');
+    modal(`<div class="bayar-sim"><p class="label-sim">${t('sim_payment')}</p><h2>${esc(qpData.method.split('·')[0])}</h2><p class="harga besar">${money(amt)}</p>
+      <button type="button" class="primer lebar" id="qp-konfirm">${transfer ? t('confirm_transfer') : (LANG === 'id' ? 'Simulasikan pembayaran berhasil' : 'Simulate successful payment')}</button></div>`, (m, close) => {
+      $('#qp-konfirm', m).addEventListener('click', () => {
+        const o = quoteToOrder(q, { amount: amt, type: qpData.pay, method: qpData.method });
+        catat('bayar_penawaran', `${q.id}->${o.id}:${qpData.pay}:${money(amt)}`);
+        close(); toast(`${o.id} ✓`); go('#/account');
+        tanyaSkor('penawaran');
+      });
+    });
+  });
+};
 
 // ========== SALES DESK ==========
 VIEWS.sales = (app) => {
@@ -1354,11 +1585,10 @@ VIEWS.sales = (app) => {
   app.innerHTML = `<section class="kepala-halaman"><p class="eyebrow">ROBRIES HQ</p><h1>${t('nav_sales')}</h1></section>
     ${due.length ? `<section class="blok"><p class="bendera custom">⏰ ${due.length} follow-up: ${due.map((l) => l.id).join(', ')}</p></section>` : ''}
     <section class="blok"><h2>Lead inbox (${S.leads.length})</h2>${leadsTable(S.leads)}</section>
-    <section class="blok"><h2>${t('my_quotes')}</h2>${S.quotes.length ? `<div class="tabel-scroll"><table class="tabel"><thead><tr><th>ID</th><th>Lead</th><th>${t('company_name')}</th><th>${t('total')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${S.quotes.map((q) => `<tr><td>${q.id}</td><td>${q.leadId}</td><td>${esc(q.company)}</td><td>${money(q.total)}</td><td>${q.status}</td><td>${q.status === 'sent' || q.status === 'accepted' ? `<button type="button" class="kecil primer" data-q2o="${q.id}">→ Order</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : `<p class="redup">${t('no_data')}</p>`}</section>
+    <section class="blok"><h2>${t('my_quotes')}</h2>${S.quotes.length ? `<div class="tabel-scroll"><table class="tabel"><thead><tr><th>ID</th><th>Lead</th><th>${t('company_name')}</th><th>${t('total')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${S.quotes.map((q) => `<tr><td>${q.id}</td><td>${q.leadId}</td><td>${esc(q.company)}</td><td>${money(q.total)}</td><td>${q.status}</td><td class="kecil-teks redup">${q.status === 'sent' ? (LANG === 'id' ? 'menunggu pembayaran pelanggan' : 'awaiting customer payment') : ''}</td></tr>`).join('')}</tbody></table></div>` : `<p class="redup">${t('no_data')}</p>`}</section>
     <section class="blok"><h2>${t('my_orders')} · production</h2>${S.orders.length ? S.orders.map((o) => orderCard(o) + `<div class="baris-tombol"><button type="button" class="kecil sekunder" data-stage="${o.id}">ERP sync (dummy) → ${LANG === 'id' ? 'tahap berikut' : 'next stage'}</button></div>`).join('') : `<p class="redup">${t('no_data')}</p>`}</section>`;
   bindLeads(app);
-  $$('[data-q2o]', app).forEach((b) => b.addEventListener('click', () => { const q = S.quotes.find((x) => x.id === b.dataset.q2o); const o = quoteToOrder(q); catat('sales_quote_ke_order', `${q.id}->${o.id}`); render(); }));
-  $$('[data-stage]', app).forEach((b) => b.addEventListener('click', () => { const o = S.orders.find((x) => x.id === b.dataset.stage); o.stage = Math.min(STAGES.length - 1, o.stage + 1); save(); catat('status_produksi', `${o.id}:${STAGES[o.stage]}`); render(); }));
+  $$('[data-stage]', app).forEach((b) => b.addEventListener('click', () => { const o = S.orders.find((x) => x.id === b.dataset.stage); o.stage = Math.min(STAGES.length - 1, Math.min(o.stage || 0, STAGES.length - 1) + 1); save(); catat('status_produksi', `${o.id}:${STAGES[o.stage]}`); render(); }));
 };
 
 // ========== ADMIN ==========
@@ -1393,7 +1623,7 @@ VIEWS.admin = (app) => {
       <label>Production load % <output id="load-out">${R.productionLoad}</output><input type="range" min="0" max="100" data-rule="productionLoad" value="${R.productionLoad}"></label>
       <label>Capacity (units/day)${num('capacityPerDay', R.capacityPerDay)}</label><label>QC days${num('qcDays', R.qcDays)}</label><label>Packing days${num('packDays', R.packDays)}</label>
       <p class="kecil-teks redup">Later: pulled automatically from the manufacturing dashboard / ERP.</p></div>
-      <div class="kotak"><h3>Open orders</h3>${S.orders.length ? S.orders.map((o) => `<p class="kecil-teks">${o.id} · ${STAGES[o.stage]} · ${o.units} units</p>`).join('') : `<p class="redup">${t('no_data')}</p>`}</div></div>`;
+      <div class="kotak"><h3>Open orders</h3>${S.orders.length ? S.orders.map((o) => `<p class="kecil-teks">${o.id} · ${stageLabel(o.stage || 0)} · ${o.units} units</p>`).join('') : `<p class="redup">${t('no_data')}</p>`}</div></div>`;
   } else if (adminTab === 'distributors') {
     const ds = S.distributors || clone(DEFAULT_DISTRIBUTORS);
     body = `<div class="tabel-scroll"><table class="tabel"><thead><tr><th>Country</th><th>Name</th><th>City</th><th>WhatsApp</th><th>Email</th></tr></thead><tbody>${ds.map((d, i) => `<tr><td>${d.country}</td>${['name', 'city', 'wa', 'email'].map((k) => `<td><input data-dist="${i}.${k}" value="${esc(d[k])}"></td>`).join('')}</tr>`).join('')}</tbody></table></div>
@@ -1431,7 +1661,7 @@ function analyticsHTML() {
   const prodTop = top(count('tambah_item'), (r) => (PMAP[r.detail.split(' ')[0]] || {}).name);
   const matTop = top(count('ubah_spesifikasi').concat(count('edit_massal')), (r) => { const m = r.detail.match(/color=([\w-]+)|:([\w-]+)\//); return m ? (CMAP[m[1] || m[2]] || {}).name : null; });
   // funnel per peserta
-  const steps = [['Explore', ['lihat_produk', 'filter_katalog', 'lihat_halaman']], ['Configure', ['tambah_item', 'pilih_template']], ['Specify', ['ubah_spesifikasi', 'edit_massal']], ['Estimate', ['hitung_estimasi', 'buka_rincian', 'ubah_tujuan']], ['Convert', ['checkout_bayar', 'kirim_sales']]];
+  const steps = [['Explore', ['lihat_produk', 'filter_katalog', 'lihat_halaman']], ['Cart / Configure', ['tambah_item', 'pilih_template', 'tambah_keranjang']], ['Specify', ['ubah_spesifikasi', 'edit_massal']], ['Estimate', ['hitung_estimasi', 'buka_rincian', 'ubah_tujuan']], ['Convert', ['checkout_bayar', 'kirim_sales', 'bayar_penawaran']]];
   const people = [...new Set(L2.map((r) => r.peserta))];
   const reached = steps.map(([n, evs]) => [n, people.filter((pp) => L2.some((r) => r.peserta === pp && evs.includes(r.kejadian))).length]);
   const max = Math.max(1, ...reached.map((x) => x[1]));
@@ -1460,6 +1690,9 @@ function aiReply(q) {
   const est = p && p.items.length ? estimate(p, R) : null;
   const id = LANG === 'id';
   const has = (...w) => w.some((x) => s.includes(x));
+  if (!hargaTampil() && has('harga', 'price', 'cost', 'berapa', 'quote')) {
+    return id ? 'Harga disiapkan tim Sales dalam penawaran resmi. Tambahkan produk ke permintaan penawaran (ikon 🛒), lalu tekan "Minta penawaran".' : 'Prices are prepared by our Sales team in a formal quotation. Add products to your quote request (🛒) and press "Request quotation".';
+  }
   if (has('harga', 'price', 'cost', 'berapa', 'estimate', 'estimasi', 'quote')) {
     return est ? (id ? `Estimasi proyek "${p.name}" saat ini ${money(est.total)} untuk ${est.units} item (berlaku ${R.validityDays} hari). Rinciannya ada di panel Estimasi.` : `Your project "${p.name}" is currently estimated at ${money(est.total)} for ${est.units} items (valid ${R.validityDays} days). Expand the breakdown in the Estimate panel.`)
       : (id ? `Harga mulai ${money(R.prices['arafuru-coaster'])} (coaster) hingga ${money(R.prices['trash-bin'])} (trash bin). Kursi Anyer ${money(R.prices['anyer-chair'])}. Tambahkan produk ke layout untuk estimasi lengkap.` : `Prices range from ${money(R.prices['arafuru-coaster'])} (coaster) to ${money(R.prices['trash-bin'])} (trash bin). Anyer chair is ${money(R.prices['anyer-chair'])}. Add products to a layout for a full estimate.`);
@@ -1521,6 +1754,7 @@ function initHeader() {
   $('#pilih-bahasa').addEventListener('change', (e) => setLang(e.target.value));
   $('#pilih-mata-uang').addEventListener('change', (e) => { S.cur = e.target.value; save(); catat('ubah_mata_uang', S.cur); render(); });
   $('#pilih-peran').addEventListener('change', (e) => setRole(e.target.value));
+  $('#tombol-lokasi').addEventListener('click', () => localeModal(false));
   $('#menu-toggle').addEventListener('click', () => {
     const n = $('#nav-utama'); n.classList.toggle('buka');
     $('#menu-toggle').setAttribute('aria-expanded', n.classList.contains('buka'));
@@ -1531,10 +1765,13 @@ window.App = {
   render,
   mulaiTugas() {
     // tugas riset: mulai dari halaman utama dengan proyek kafe kosong
+    S.cart = { lines: [], ctx: null, notes: '' };
+    S.locale = null;
     newProject(LANG === 'id' ? 'Tugas: layout kafe' : 'Task: café layout', null);
     estSnapshot = null; breakdownOpen = false; coStep = 0;
     go('#/home');
     render();
+    localeModal(true);
   },
 };
 
@@ -1542,3 +1779,4 @@ initHeader();
 initChat();
 route = parseRoute();
 render();
+if (!S.locale && !['view'].includes(route.name)) localeModal(true);
